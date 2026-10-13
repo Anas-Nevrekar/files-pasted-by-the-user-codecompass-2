@@ -63,3 +63,15 @@ The backend cookie is HTTP-only and scoped to `/api`. Keep frontend and backend 
 ## Scope
 
 The app supports GitHub sign-in, user session checks, public repository metadata import/listing, and logout. It does not implement private repository access, cloning, indexing, parsing, embeddings, AI answers, or graph visualization.
+
+## Phase 3: Repository indexing UI
+
+Each imported repository now shows its latest indexing status. Users can start indexing, monitor the backend-reported stage and progress, retry a failed job, and resume polling an active job after reloading the dashboard. Polling runs every two seconds, avoids overlapping requests, also refreshes when the page becomes visible, and stops for completed/failed jobs or when a card unmounts. Temporary status request errors leave the current backend status intact and are shown inline.
+
+The frontend uses these implemented backend endpoints (all status calls use the existing credentialed API client):
+
+- `POST /api/repositories/:repositoryId/index` — returns `{ success, alreadyRunning, job }` with HTTP 202 for a new job and HTTP 200 when an active job already exists. `job` includes `id`, `repositoryId`, `status`, `progress`, `stage`, `message`, discovered/eligible/excluded file counts, attempt counts, timestamps, and a safe `error` object.
+- `GET /api/repositories/:repositoryId/indexing-status` — returns `{ repositoryId, latestJob, lastSuccessfulIndex }`. This is fetched per imported repository because the list endpoint does not include indexing fields.
+- `GET /api/indexing-jobs/:jobId` — returns `{ job }` for polling.
+
+Current backend stages are `queued`, `cloning`, `filtering`, `saving_inventory`, `completed`, and `failed` (the last two are terminal job statuses). The progress bar appears only when the backend returns a numeric `progress`; the UI does not estimate progress. Successful file totals and commit information are displayed only when supplied by the backend. Unknown statuses are shown as unknown instead of being treated as completed.

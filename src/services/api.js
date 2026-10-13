@@ -43,6 +43,9 @@ export const api = {
   me: () => request('/api/auth/me'),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
   repositories: () => request('/api/repositories'),
+  startRepositoryIndexing: (repositoryId) => request(`/api/repositories/${encodeURIComponent(repositoryId)}/index`, { method: 'POST' }),
+  repositoryIndexingStatus: (repositoryId) => request(`/api/repositories/${encodeURIComponent(repositoryId)}/indexing-status`),
+  indexingJobStatus: (jobId) => request(`/api/indexing-jobs/${encodeURIComponent(jobId)}`),
   importRepository: (url) => request('/api/repositories/import', { method: 'POST', body: JSON.stringify({ url }) }),
   githubSignInUrl: () => `${baseUrl}/api/auth/github`,
 };
