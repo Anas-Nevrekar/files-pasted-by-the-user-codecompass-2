@@ -1,0 +1,19 @@
+import { useCallback, useEffect, useState } from 'react';
+import Navbar from '../components/Navbar.jsx';
+import RepositoryForm from '../components/RepositoryForm.jsx';
+import RepositoryCard from '../components/RepositoryCard.jsx';
+import { api } from '../services/api.js';
+import { useAuth } from '../hooks/useAuth.js';
+export default function DashboardPage() {
+  const { user, signOut, clearAuth } = useAuth(); const [repositories, setRepositories] = useState([]); const [loading, setLoading] = useState(true); const [listError, setListError] = useState(''); const [loggingOut, setLoggingOut] = useState(false); const [logoutError, setLogoutError] = useState('');
+  const loadRepositories = useCallback(async () => { setLoading(true); setListError(''); try { const data = await api.repositories(); setRepositories(Array.isArray(data.repositories) ? data.repositories : []); } catch (error) { if (error.code === 'UNAUTHENTICATED') { clearAuth(); return; } setListError(error.message); } finally { setLoading(false); } }, [clearAuth]);
+  useEffect(() => { loadRepositories(); }, [loadRepositories]);
+  async function importRepository(url) { try { const result = await api.importRepository(url); setRepositories(current => { const item = { ...result.repository }; const existing = current.findIndex(repo => repo.id === item.id || repo.fullName?.toLowerCase() === item.fullName?.toLowerCase()); if (existing < 0) return [item, ...current]; const next = [...current]; next[existing] = { ...next[existing], ...item }; return next; }); return result; } catch (error) { if (error.code === 'UNAUTHENTICATED') clearAuth(); throw error; } }
+  async function logout() { setLoggingOut(true); setLogoutError(''); try { await signOut(); } catch (error) { setLogoutError(error.message); } finally { setLoggingOut(false); } }
+  return <div className="dashboard-shell"><Navbar user={user} onLogout={logout} loggingOut={loggingOut}/><main className="dashboard-main"><section className="welcome"><div><div className="eyebrow"><span className="eyebrow-dot"/> YOUR WORKSPACE</div><h1>Good to have you,<br/><em>{user?.displayName || user?.githubUsername || 'developer'}.</em></h1><p>Bring a repository into view and start finding your bearings.</p></div><div className="welcome-index"><span>01</span><div>YOUR<br/>REPOSITORIES</div></div></section>
+    {logoutError && <p className="notice notice-error" role="alert">{logoutError}</p>}
+    <section className="import-panel"><div className="section-heading"><div><span className="section-number">01 / IMPORT</span><h2>Bring a codebase into focus.</h2></div><p>Connect any public GitHub repository<br/>to get started.</p></div><RepositoryForm onImport={importRepository}/></section>
+    <section className="repositories-section"><div className="section-heading repo-heading"><div><span className="section-number">02 / YOUR LIBRARY</span><h2>Repositories <span className="count">{repositories.length.toString().padStart(2,'0')}</span></h2></div>{repositories.length > 0 && <span className="list-note">Newest imports first</span>}</div>
+      {loading ? <div className="inline-state" role="status"><span className="loader"/>Loading your repositories…</div> : listError ? <div className="empty-state"><p>{listError}</p><button className="button button-outline" onClick={loadRepositories}>Try again ↗</button></div> : repositories.length === 0 ? <div className="empty-state"><div className="empty-glyph">⌘</div><h3>Your library is waiting.</h3><p>Paste a public GitHub URL above to add your first repository.</p></div> : <div className="repo-list">{repositories.map(repo => <RepositoryCard key={repo.id || repo.fullName} repository={repo}/>)}</div>}
+    </section><footer className="dashboard-footer"><span>CODECOMPASS / PHASE 02</span><span>PUBLIC REPOSITORIES · PRIVATE BY DEFAULT</span></footer></main></div>;
+}

@@ -1,0 +1,2 @@
+import { Link, useSearchParams } from 'react-router-dom';
+export default function AuthErrorPage() { const [params] = useSearchParams(); const code = params.get('code'); return <main className="center-state"><span className="eyebrow">SIGN IN INTERRUPTED</span><h1>We couldn’t complete sign in.</h1><p>{code === 'OAUTH_DENIED' ? 'GitHub sign-in was cancelled.' : code === 'OAUTH_CONFIGURATION_ERROR' ? 'GitHub sign-in is not configured on the backend.' : 'Please try signing in again.'}</p><Link to="/" className="button button-dark">Back to CodeCompass</Link></main>; }
