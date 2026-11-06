@@ -8,6 +8,10 @@ vi.mock('../services/api.js', () => ({ api: {
   indexingJobStatus: vi.fn(),
   startRepositoryParsing: vi.fn(),
   parsingJobStatus: vi.fn(),
+  startRepositoryEmbeddings: vi.fn(),
+  embeddingJobStatus: vi.fn(),
+  searchRepository: vi.fn(),
+  askRepositoryQuestion: vi.fn(),
 } }));
 
 const repository = { id: 'repository-id', fullName: 'octo/project', htmlUrl: 'https://github.com/octo/project' };
@@ -20,7 +24,7 @@ const indexedRepository = {
   ...repository,
   indexing: {
     latestJob: { id: 'index-1', repositoryId: repository.id, status: 'completed', stage: 'completed', progress: 100 },
-    lastSuccessfulIndex: { eligibleFileCount: 12 },
+    lastSuccessfulIndex: { eligibleFileCount: 12, indexedAt: '2026-11-05T09:00:00.000Z' },
   },
 };
 
@@ -29,8 +33,34 @@ const parsingJob = {
   totalFiles: 0, processedFiles: 0, parsedFiles: 0, skippedFiles: 0, failedFiles: 0,
   totalChunks: 0, errorMessage: null, startedAt: null, completedAt: null,
 };
+const completedParsingJob = { ...parsingJob, status: 'completed', stage: 'completed', progress: 100, totalChunks: 3, completedAt: '2026-11-06T10:00:00.000Z' };
+const embeddingJob = { id: 'embed-1', repositoryId: repository.id, parsingJobId: completedParsingJob.id, status: 'queued', stage: 'queued', progress: 0, totalChunks: 3, processedChunks: 0, embeddedChunks: 0, skippedChunks: 0, failedChunks: 0 };
 
 describe('RepositoryCard indexing controls', () => {
+  it('keeps codebase questions unavailable until backend embeddings are confirmed for the current parse', () => {
+    render(<RepositoryCard repository={indexedRepository}/>);
+    expect(screen.queryByRole('button', { name: /ask about this repository/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/complete ast parsing before asking questions/i)).toBeInTheDocument();
+  });
+
+  it('shows repository Q&A only after saved parsing and embedding jobs confirm readiness', async () => {
+    window.localStorage.setItem('codecompass-parsing-jobs', JSON.stringify({ [repository.id]: completedParsingJob }));
+    window.localStorage.setItem('codecompass-embedding-jobs', JSON.stringify({ [repository.id]: { id: 'embed-ready', repositoryId: repository.id, parsingJobId: completedParsingJob.id, status: 'completed', embeddedChunks: 3 } }));
+    render(<RepositoryCard repository={indexedRepository}/>);
+    fireEvent.click(screen.getByRole('button', { name: /ask about this repository/i }));
+    expect(screen.getByRole('heading', { name: /ask about octo\/project/i })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /ask a question about octo\/project/i })).toBeEnabled();
+  });
+
+  it('keeps Q&A disabled when re-indexing is newer than the saved parse and embeddings', () => {
+    window.localStorage.setItem('codecompass-parsing-jobs', JSON.stringify({ [repository.id]: completedParsingJob }));
+    window.localStorage.setItem('codecompass-embedding-jobs', JSON.stringify({ [repository.id]: { id: 'embed-ready', repositoryId: repository.id, parsingJobId: completedParsingJob.id, status: 'completed', embeddedChunks: 3 } }));
+    const newerIndex = { ...indexedRepository, indexing: { ...indexedRepository.indexing, latestJob: { ...indexedRepository.indexing.latestJob, completedAt: '2026-11-07T10:00:00.000Z' } } };
+    render(<RepositoryCard repository={newerIndex}/>);
+    expect(screen.queryByRole('button', { name: /ask about this repository/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/re-parse the latest indexed snapshot/i)).toBeInTheDocument();
+  });
+
   it('shows the index action and starts indexing with the repository ID', async () => {
     api.startRepositoryIndexing.mockResolvedValue({ success: true, alreadyRunning: false, job: activeJob });
     render(<RepositoryCard repository={repository}/>);
@@ -172,5 +202,73 @@ describe('RepositoryCard indexing controls', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /re-index repository/i })); });
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
     expect(screen.getByRole('button', { name: /retry parsing/i })).toBeInTheDocument();
+  });
+
+  it('keeps embedding generation unavailable until parsing has completed', () => {
+    render(<RepositoryCard repository={indexedRepository}/>);
+    expect(screen.getByText('Complete AST parsing before generating embeddings.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /generate embeddings/i })).not.toBeInTheDocument();
+  });
+
+  it('starts embeddings for the parsed snapshot, restores the job ID, polls, and stops at completion', async () => {
+    window.localStorage.setItem('codecompass-parsing-jobs', JSON.stringify({ [repository.id]: completedParsingJob }));
+    api.startRepositoryEmbeddings.mockResolvedValue({ success: true, alreadyRunning: false, job: embeddingJob });
+    api.embeddingJobStatus.mockResolvedValueOnce({ job: embeddingJob }).mockResolvedValue({ job: { ...embeddingJob, status: 'completed', stage: 'completed', progress: 100, processedChunks: 3, embeddedChunks: 3, completedAt: '2026-11-06T10:01:00.000Z' } });
+    render(<RepositoryCard repository={indexedRepository}/>);
+    const button = screen.getByRole('button', { name: /generate embeddings/i });
+    await act(async () => { fireEvent.click(button); fireEvent.click(button); });
+    expect(api.startRepositoryEmbeddings).toHaveBeenCalledTimes(1);
+    expect(api.startRepositoryEmbeddings).toHaveBeenCalledWith(repository.id);
+    expect(JSON.parse(window.localStorage.getItem('codecompass-embedding-jobs'))[repository.id].id).toBe('embed-1');
+    await act(async () => { await Promise.resolve(); });
+    expect(api.embeddingJobStatus).toHaveBeenCalledWith('embed-1');
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(screen.getByText('Embeddings generated')).toBeInTheDocument();
+    expect(screen.getByText(/3 \/ 3 chunks processed/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /search repository/i })).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(api.embeddingJobStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('restores active embedding jobs after refresh and keeps them active through temporary network failures', async () => {
+    window.localStorage.setItem('codecompass-parsing-jobs', JSON.stringify({ [repository.id]: completedParsingJob }));
+    window.localStorage.setItem('codecompass-embedding-jobs', JSON.stringify({ [repository.id]: embeddingJob }));
+    api.embeddingJobStatus.mockRejectedValueOnce(new Error('Temporary connection problem')).mockResolvedValue({ job: { ...embeddingJob, status: 'processing', stage: 'generating_embeddings', progress: 35, processedChunks: 1 } });
+    render(<RepositoryCard repository={indexedRepository}/>);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText('Waiting to start')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Temporary connection problem');
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(screen.getByText('Generating embeddings')).toBeInTheDocument();
+    expect(screen.getByText(/1 \/ 3 chunks processed/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /search repository/i })).not.toBeInTheDocument();
+  });
+
+  it('searches only after the current parse has embeddings and displays returned retrieval details', async () => {
+    window.localStorage.setItem('codecompass-parsing-jobs', JSON.stringify({ [repository.id]: completedParsingJob }));
+    window.localStorage.setItem('codecompass-embedding-jobs', JSON.stringify({ [repository.id]: { ...embeddingJob, status: 'completed', stage: 'completed', progress: 100, embeddedChunks: 3 } }));
+    api.searchRepository.mockResolvedValue({ results: [{ chunkId: 'chunk-1', filePath: 'src/auth.js', language: 'javascript', structureType: 'function', symbolName: 'authenticateUser', startLine: 10, endLine: 12, sourceCode: 'function authenticateUser() {\n  return true;\n}', retrieval: { vectorRank: 1, keywordRank: 2, rrfScore: 0.0325, matchedBy: ['vector', 'keyword'] } }] });
+    render(<RepositoryCard repository={indexedRepository}/>);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /search repository/i })); });
+    fireEvent.change(screen.getByRole('textbox', { name: /search code/i }), { target: { value: 'Where is authentication?' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^search/i })); });
+    expect(api.searchRepository).toHaveBeenCalledWith(repository.id, 'Where is authentication?', 10);
+    expect(screen.getByText('authenticateUser')).toBeInTheDocument();
+    expect(screen.getByText('src/auth.js')).toBeInTheDocument();
+    expect(screen.getByText('Vector + Keyword')).toBeInTheDocument();
+    expect(screen.getByText('RRF score: 0.03250')).toBeInTheDocument();
+  });
+
+  it('displays empty search results and does not submit an empty query', async () => {
+    window.localStorage.setItem('codecompass-parsing-jobs', JSON.stringify({ [repository.id]: completedParsingJob }));
+    window.localStorage.setItem('codecompass-embedding-jobs', JSON.stringify({ [repository.id]: { ...embeddingJob, status: 'completed', stage: 'completed', progress: 100, embeddedChunks: 3 } }));
+    api.searchRepository.mockResolvedValue({ results: [] });
+    render(<RepositoryCard repository={indexedRepository}/>);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /search repository/i })); });
+    expect(screen.getByRole('button', { name: /^search/i })).toBeDisabled();
+    expect(api.searchRepository).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('textbox', { name: /search code/i }), { target: { value: 'calculateTotal' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^search/i })); });
+    expect(screen.getByText('No matching code chunks found.')).toBeInTheDocument();
   });
 });

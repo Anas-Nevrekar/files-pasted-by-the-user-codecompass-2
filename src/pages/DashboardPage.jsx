@@ -81,7 +81,7 @@ export default function DashboardPage() {
             : repositories.length === 0 ? <div className="empty-state"><div className="empty-glyph">⌘</div><h3>Your library is waiting.</h3><p>Paste a public GitHub URL above to add your first repository.</p></div>
               : <div className="repo-list">{repositories.map((repository) => <RepositoryCard key={repository.id || repository.fullName} repository={repository} onUnauthorized={clearAuth}/>)}</div>}
       </section>
-      <footer className="dashboard-footer"><span>CODECOMPASS / PHASE 03</span><span>PUBLIC REPOSITORIES · PRIVATE BY DEFAULT</span></footer>
+      <footer className="dashboard-footer"><span>CODECOMPASS / PHASE 05</span><span>PUBLIC REPOSITORIES · PRIVATE BY DEFAULT</span></footer>
     </main>
   </div>;
 }
