@@ -55,11 +55,12 @@ function renderAnswer(answer, citations, onOpen) {
   return blocks;
 }
 
-export default function RepositoryAsk({ repository, onUnauthorized = () => {} }) {
+export default function RepositoryAsk({ repository, onUnauthorized = () => {}, onOpenCitation }) {
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
   const [expandedCitation, setExpandedCitation] = useState(null);
+  const [citationError, setCitationError] = useState('');
   const controllerRef = useRef(null);
   const busyRef = useRef(false);
   const messagesRef = useRef(null);
@@ -132,7 +133,8 @@ export default function RepositoryAsk({ repository, onUnauthorized = () => {} })
         <div className={`ask-answer ${message.insufficientEvidence ? 'ask-answer-insufficient' : ''}`}>
           <div className="ask-answer-label">{message.insufficientEvidence ? 'Evidence was insufficient' : 'CodeCompass'}{message.status === 'waiting' && <span className="ask-waiting" role="status"><span className="loader"/>Retrieving evidence and preparing an answer…</span>}{message.status === 'streaming' && <span className="ask-streaming" role="status">Answering…</span>}{message.status === 'error' && message.answer && <span className="ask-streaming">Answer interrupted</span>}</div>
           {message.insufficientEvidence && <p className="ask-insufficient-note">The available code evidence did not support a confident answer.</p>}
-          {message.answer && !message.insufficientEvidence && <div className="ask-answer-content">{renderAnswer(message.answer, message.citations, (citationId) => setExpandedCitation(`${message.id}:${citationId}`))}</div>}
+          {message.answer && !message.insufficientEvidence && <div className="ask-answer-content">{renderAnswer(message.answer, message.citations, (citationId) => { const citation = message.citations.find((item) => item.id === citationId); if (citation && onOpenCitation && citation.filePath) { setCitationError(''); onOpenCitation(citation); } else if (citation && onOpenCitation) setCitationError(`Source location for ${citation.id} is unavailable.`); else setExpandedCitation(`${message.id}:${citationId}`); })}</div>}
+          {citationError && <p className="ask-error" role="alert">{citationError}</p>}
           {message.status === 'error' && <p className="ask-error" role="alert">{message.error} <button type="button" className="ask-retry" disabled={busy} onClick={() => sendQuestion(message.question)}>Retry this question</button></p>}
           {message.status === 'completed' && message.citations.length > 0 && <div className="ask-sources">
             <h4>Sources</h4>
@@ -143,6 +145,7 @@ export default function RepositoryAsk({ repository, onUnauthorized = () => {} })
               {expandedCitation === `${message.id}:${citation.id}` && <div className="ask-source-detail">
                 <div>{citation.symbolName && <span>Symbol: {citation.symbolName}</span>}{citation.language && <span>Language: {citation.language}</span>}{citation.structureType && <span>Structure: {citation.structureType}</span>}</div>
                 {citation.explanation && <p>{citation.explanation}</p>}
+                {citation.filePath && onOpenCitation && <button type="button" className="ask-open-source" onClick={() => { setCitationError(''); onOpenCitation(citation); }}>Open in Code Viewer ↗</button>}
                 {typeof citation.sourceCode === 'string' && <pre className="ask-source-code"><code>{citation.sourceCode.split('\n').map((line, lineIndex) => <span className="ask-source-line" key={lineIndex}><b>{Number.isFinite(citation.startLine) ? citation.startLine + lineIndex : ''}</b>{line || ' '}</span>)}</code></pre>}
               </div>}
             </div>)}

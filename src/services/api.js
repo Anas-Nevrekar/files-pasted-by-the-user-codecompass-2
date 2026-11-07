@@ -26,6 +26,13 @@ const messages = {
   RAG_UNAVAILABLE: 'Question answering is temporarily unavailable. Please try again later.',
   EMBEDDING_PROVIDER_UNAVAILABLE: 'The embedding service is temporarily unavailable. Please try again later.',
   OLLAMA_UNAVAILABLE: 'The embedding service is temporarily unavailable.',
+  INVALID_REPOSITORY_ID: 'The repository identifier is invalid.',
+  ANALYSIS_NOT_READY: 'Repository parsing is not ready for source navigation.',
+  SOURCE_NOT_FOUND: 'The requested parsed source could not be found.',
+  INVALID_FILE_PATH: 'The requested file path is invalid.',
+  STALE_ANALYSIS: 'The analysis changed. Refresh this onboarding guide and try again.',
+  ANALYSIS_NOT_READY: 'Repository parsing is not ready for saving guide progress.',
+  INVALID_READING_PROGRESS: 'The onboarding progress update is invalid.',
 };
 
 async function request(path, options = {}) {
@@ -119,14 +126,28 @@ export const api = {
   get baseUrl() { return baseUrl; },
   me: () => request('/api/auth/me'),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
-  repositories: () => request('/api/repositories'),
+  repositories: (options = {}) => request('/api/repositories', options),
+  deleteRepository: (repositoryId) => request(`/api/repositories/${encodeURIComponent(repositoryId)}`, { method: 'DELETE' }),
   startRepositoryIndexing: (repositoryId) => request(`/api/repositories/${encodeURIComponent(repositoryId)}/index`, { method: 'POST' }),
   repositoryIndexingStatus: (repositoryId) => request(`/api/repositories/${encodeURIComponent(repositoryId)}/indexing-status`),
+  repositoryProcessingStatus: (repositoryId) => request(`/api/repositories/${encodeURIComponent(repositoryId)}/indexing-status`),
   indexingJobStatus: (jobId) => request(`/api/indexing-jobs/${encodeURIComponent(jobId)}`),
   startRepositoryParsing: (repositoryId) => request(`/api/repositories/${encodeURIComponent(repositoryId)}/parse`, { method: 'POST' }),
   parsingJobStatus: (jobId) => request(`/api/parsing-jobs/${encodeURIComponent(jobId)}`),
   startRepositoryEmbeddings: (repositoryId) => request(`/api/repositories/${encodeURIComponent(repositoryId)}/embeddings`, { method: 'POST' }),
   embeddingJobStatus: (jobId) => request(`/api/embedding-jobs/${encodeURIComponent(jobId)}`),
+  repositoryGraph: (repositoryId, options = {}) => request(`/api/repositories/${encodeURIComponent(repositoryId)}/graph`, options),
+  repositoryReadingGuide: (repositoryId, options = {}) => request(`/api/repositories/${encodeURIComponent(repositoryId)}/reading-guide`, options),
+  repositoryReadingProgress: (repositoryId, options = {}) => request(`/api/repositories/${encodeURIComponent(repositoryId)}/reading-progress`, options),
+  saveRepositoryReadingProgress: (repositoryId, progress) => request(`/api/repositories/${encodeURIComponent(repositoryId)}/reading-progress`, { method: 'PUT', body: JSON.stringify(progress) }),
+  repositorySource: (repositoryId, { filePath, chunkId, startLine, endLine, symbolName, signal } = {}) => {
+    const params = new URLSearchParams({ filePath: filePath || '' });
+    if (chunkId) params.set('chunkId', chunkId);
+    if (startLine != null) params.set('startLine', String(startLine));
+    if (endLine != null) params.set('endLine', String(endLine));
+    if (symbolName) params.set('symbolName', symbolName);
+    return request(`/api/repositories/${encodeURIComponent(repositoryId)}/source?${params}`, { signal });
+  },
   searchRepository: (repositoryId, query, limit = 10) => request(`/api/repositories/${encodeURIComponent(repositoryId)}/search`, {
     method: 'POST', body: JSON.stringify({ query, limit }),
   }),

@@ -43,6 +43,21 @@ describe('RepositoryAsk', () => {
     expect(screen.getByText('This function handles login.')).toBeInTheDocument();
   });
 
+  it('sends validated citation metadata to repository source navigation when enabled', async () => {
+    api.askRepositoryQuestion.mockImplementation(async (_repositoryId, _question, options) => {
+      options.onEvent('answer', { answer: 'Authentication uses login [[S1]].' });
+      options.onEvent('citations', { citations: [citation] });
+      options.onEvent('complete', { status: 'completed', insufficientEvidence: false });
+      return { answer: 'Authentication uses login [[S1]].', citations: [citation], insufficientEvidence: false };
+    });
+    const onOpenCitation = vi.fn();
+    render(<RepositoryAsk repository={repository} onOpenCitation={onOpenCitation}/>);
+    fireEvent.change(screen.getByRole('textbox', { name: /ask a question/i }), { target: { value: 'Where is login?' } });
+    fireEvent.click(screen.getByRole('button', { name: /ask repository/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open source S1' }));
+    expect(onOpenCitation).toHaveBeenCalledWith(citation);
+  });
+
   it('keeps unknown inline IDs non-clickable and citations isolated per answer', async () => {
     const firstCitation = { ...citation, filePath: 'src/first.js', sourceCode: 'firstSource()' };
     const secondCitation = { ...citation, chunkId: 'chunk-2', filePath: 'src/second.js', sourceCode: 'secondSource()' };

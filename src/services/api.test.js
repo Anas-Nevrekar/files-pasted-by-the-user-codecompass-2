@@ -115,3 +115,35 @@ describe('Phase 6 API contract', () => {
     await expect(api.askRepositoryQuestion('repo-1', 'Where?')).resolves.toEqual(result);
   });
 });
+
+describe('Phase 7 exploration API contract', () => {
+  it('loads graph and guide data with the authenticated API client', async () => {
+    const graph = { repositoryId: 'repo-1', status: 'ready', nodes: [], edges: [], metadata: { isComplete: true } };
+    const guide = { repositoryId: 'repo-1', status: 'ready', recommendations: [], metadata: { method: 'static-analysis' } };
+    const progress = { repositoryId: 'repo-1', status: 'ready', parsingJobId: 'parse-1', progress: { parsingJobId: 'parse-1', activeStageId: 'initialization', statusByStage: {} } };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => graph })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => guide })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => progress })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => progress });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(api.repositoryGraph('repo/1')).resolves.toEqual(graph);
+    await expect(api.repositoryReadingGuide('repo/1')).resolves.toEqual(guide);
+    await expect(api.repositoryReadingProgress('repo/1')).resolves.toEqual(progress);
+    await expect(api.saveRepositoryReadingProgress('repo/1', progress.progress)).resolves.toEqual(progress);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, `${api.baseUrl}/api/repositories/repo%2F1/graph`, { credentials: 'include', headers: {} });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, `${api.baseUrl}/api/repositories/repo%2F1/reading-guide`, { credentials: 'include', headers: {} });
+    expect(fetchMock).toHaveBeenNthCalledWith(3, `${api.baseUrl}/api/repositories/repo%2F1/reading-progress`, { credentials: 'include', headers: {} });
+    expect(fetchMock).toHaveBeenNthCalledWith(4, `${api.baseUrl}/api/repositories/repo%2F1/reading-progress`, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, method: 'PUT', body: JSON.stringify(progress.progress) });
+  });
+
+  it('requests citation source by trusted path and chunk ID and maps source errors', async () => {
+    const source = { filePath: 'src/auth.js', contentScope: 'parsed_chunks', chunks: [{ id: 'chunk-1' }] };
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, status: 200, json: async () => source });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(api.repositorySource('repo/1', { filePath: 'src/auth.js', chunkId: 'chunk-1', startLine: 4, endLine: 6 })).resolves.toEqual(source);
+    expect(fetchMock).toHaveBeenCalledWith(`${api.baseUrl}/api/repositories/repo%2F1/source?filePath=src%2Fauth.js&chunkId=chunk-1&startLine=4&endLine=6`, { credentials: 'include', headers: {} });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({ error: { code: 'SOURCE_NOT_FOUND', message: 'Missing' } }) }));
+    await expect(api.repositorySource('repo-1', { filePath: 'src/missing.js' })).rejects.toMatchObject({ code: 'SOURCE_NOT_FOUND' });
+  });
+});

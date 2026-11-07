@@ -13,7 +13,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@vitejs/plugin-react": "latest",
+    "@xyflow/react": "^12.12.1",
     "react": "latest",
     "react-dom": "latest",
     "react-router-dom": "latest",
